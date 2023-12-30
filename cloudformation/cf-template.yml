@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: A sample template CloudFront and S3.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project name
+    Default: sample-cloudfront-s3
+
+Resources:
+  CloudFrontOriginBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-front-origin-bucket"
+      VersioningConfiguration:
+        Status: Enabled
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  CloudFrontOriginBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: CloudFrontOriginBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipal
+            Effect: Allow
+            Action: s3:GetObject
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Resource:
+              !Sub "${CloudFrontOriginBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn:
+                  !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+  CloudFrontLogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-front-log-bucket"
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      VersioningConfiguration:
+        Status: Enabled
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub "${ProjectName}-front-distribution"
+        DefaultCacheBehavior:
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          Compress: true
+          TargetOriginId: !Sub "${ProjectName}-front-origin"
+          ViewerProtocolPolicy: allow-all
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: http2
+        IPV6Enabled: true
+        Logging:
+          Bucket:
+            Fn::GetAtt:
+              - CloudFrontLogBucket
+              - RegionalDomainName
+          IncludeCookies: true
+        Origins:
+          - DomainName:
+              Fn::GetAtt:
+                - CloudFrontOriginBucket
+                - RegionalDomainName
+            Id: !Sub "${ProjectName}-front-origin"
+            OriginAccessControlId:
+              !GetAtt CloudFrontS3OriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        PriceClass: PriceClass_200
+  CloudFrontS3OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Description: Access Control
+        Name: !Sub "${ProjectName}-front-origin-access-control"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+Outputs:
+  CloudFrontDistributionDomainName:
+    Value:
+      !Sub "https://${CloudFrontDistribution.DomainName}"
